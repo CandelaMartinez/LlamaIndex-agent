@@ -106,30 +106,32 @@ async def main():
     print(t_weather.call("Barcelona"))
     print(t_query.call("Summarize the docs"))
 
-    print("\nMini agent v2 ready (with reasoning)")
+    print("\nMini agent v3 ready (tool + synthesis)")
     print("=" * 50)
+
     while True:
-            user_input = input("\nAsk (exit to quit): ").strip()
-            if user_input.lower() in {"exit", "quit", "salir"}:
-                print("Bye")
-                break
+        user_input = input("\nAsk (exit to quit): ").strip()
+        if user_input.lower() in {"exit", "quit", "salir"}:
+            print("Bye")
+            break
 
-            prompt = f"""
-    You are a helpful assistant with two tools:
-    1) query_docs — answers questions using the local document index.
-    2) weather — gives the weather for a city.
-    Return only the tool name to use: either 'query_docs' or 'weather'.
-    Question: {user_input}
-    Answer:
-    """.strip()
+        route_prompt = f"""
+            You are a helpful assistant with two tools:
+            1) query_docs — answers questions using the local document index.
+            2) weather — gives the weather for a city.
+            Return only the tool name to use: either 'query_docs' or 'weather'.
+            Question: {user_input}
+            Answer:
+            """.strip()
 
-            try:
-                decision_raw = llm.complete(prompt)
-                decision = getattr(decision_raw, "text", str(decision_raw)).strip().lower()
-            except Exception as e:
-                print(f"Error calling LLM: {e}")
-                continue
+        try:
+            decision_raw = llm.complete(route_prompt)
+            decision = getattr(decision_raw, "text", str(decision_raw)).strip().lower()
+        except Exception as e:
+            print(f"Error calling LLM (route): {e}")
+            continue
 
+        try:
             if "weather" in decision:
                 city = (
                     user_input.lower()
@@ -139,12 +141,33 @@ async def main():
                     .replace("en", "")
                     .strip()
                 ) or "Barcelona"
-                print("→ Using weather tool")
-                print("Tool:", t_weather.call(city))
+                tool_name = "weather"
+                tool_output = t_weather.call(city)
             else:
-                print("→ Using document query tool")
-                print("Tool:", t_query.call(user_input))
-    
+                tool_name = "query_docs"
+                tool_output = t_query.call(user_input)
+        except Exception as e:
+            print(f"Error calling tool: {e}")
+            continue
+
+        synth_prompt = f"""
+            You are a helpful assistant.
+            User question: {user_input}
+            Selected tool: {tool_name}
+            Tool output:
+            ---
+            {tool_output}
+            ---
+            Write a clear final answer for the user. If the user wrote Spanish, respond in Spanish; otherwise respond in English. Be concise.
+            """.strip()
+
+        try:
+            final_raw = llm.complete(synth_prompt)
+            final_text = getattr(final_raw, "text", str(final_raw)).strip()
+            print("\nFinal:", final_text)
+        except Exception as e:
+            print(f"Error calling LLM (synthesis): {e}")
+            print("Fallback:", tool_output)
 
 
 if __name__ == "__main__":
