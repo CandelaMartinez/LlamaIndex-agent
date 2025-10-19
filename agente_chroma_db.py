@@ -106,20 +106,38 @@ async def main():
     print(t_weather.call("Barcelona"))
     print(t_query.call("Summarize the docs"))
 
-    print("\nMini agent ready")
+    print("\nMini agent v2 ready (with reasoning)")
     print("=" * 50)
 
     while True:
-        q = input("\nAsk (exit to quit): ").strip()
-        if q.lower() in {"exit", "quit", "salir"}:
+        user_input = input("\nAsk (exit to quit): ").strip()
+        if user_input.lower() in {"exit", "quit", "salir"}:
             print("Bye")
             break
 
-        if "weather" in q.lower() or "clima" in q.lower() or "tiempo" in q.lower():
-            city = q.replace("weather", "").replace("clima", "").replace("tiempo", "").strip() or "Barcelona"
+        prompt = f"""
+            You are a helpful assistant with two tools:
+            1. query_docs: answers questions using the local document index.
+            2. weather: gives the weather for a city.
+
+            Decide which tool to use for this question, and only respond with the tool name:
+            Question: {user_input}
+            Answer:
+            """
+        try:
+            decision = llm.complete(prompt).text.strip().lower()
+        except Exception as e:
+            print("Error calling LLM:", e)
+            continue
+
+        if "weather" in decision:
+            city = user_input.replace("weather", "").replace("clima", "").replace("tiempo", "").strip() or "Barcelona"
+            print("→ Using weather tool")
             print("Tool:", t_weather.call(city))
         else:
-            print("Tool:", t_query.call(q))
+            print("→ Using document query tool")
+            print("Tool:", t_query.call(user_input))
+
 
 if __name__ == "__main__":
     asyncio.run(main())
